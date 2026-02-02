@@ -66,9 +66,30 @@ class TestTelephonyService:
 class TestEphoneParsing:
     def test_parse_ephone_summary(self):
         phones = parse_ephone_summary(SHOW_EPHONE_SUMMARY)
-        assert len(phones) >= 2
+        assert len(phones) == 3
         registered = [p for p in phones if p.get("status") == "registered"]
-        assert len(registered) >= 1
+        assert len(registered) == 2
+
+    def test_mac_parsed(self):
+        phones = parse_ephone_summary(SHOW_EPHONE_SUMMARY)
+        assert phones[0]["mac"] == "000D.2932.22A0"
+        assert phones[1]["mac"] == "64D9.8969.51A0"
+
+    def test_ip_parsed(self):
+        phones = parse_ephone_summary(SHOW_EPHONE_SUMMARY)
+        assert phones[0]["ip"] == "10.20.102.20"
+        # ephone-3 has IP 0.0.0.0 which should be excluded
+        assert "ip" not in phones[2]
+
+    def test_type_parsed(self):
+        phones = parse_ephone_summary(SHOW_EPHONE_SUMMARY)
+        assert phones[0]["type"] == "7960"
+        assert phones[1]["type"] == "7945"
+
+    def test_primary_dn_parsed(self):
+        phones = parse_ephone_summary(SHOW_EPHONE_SUMMARY)
+        assert phones[0]["primary_dn"] == 1
+        assert phones[2]["primary_dn"] == 3
 
     def test_empty_input(self):
         phones = parse_ephone_summary("")

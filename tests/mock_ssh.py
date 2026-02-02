@@ -50,16 +50,17 @@ create cnf-files version-stamp Jan 01 2023 00:00:00
 """
 
 SHOW_EPHONE_SUMMARY = """\
-ephone-1          Mac:1234.5678.9AB0 TCP socket:[3] activeLine:0 REGISTERED in SCCP ver 12/9
-mediaActive:0 offhook:0 ringing:0 reset:0 reset_sent:0 paging 0 debug:0 caps:8
-IP:10.20.102.20 50472 Telecaster 7945  keepalive 4242 max_line 8
+ephone-1[0] Mac:000D.2932.22A0 TCP socket:[4] activeLine:0 whisperLine:0 REGISTERED in SCCP ver 11/9
+mediaActive:0 whisper_mediaActive:0 startMedia:0 offhook:0 ringing:0 reset:0 reset_sent:0 debug:0  primary_dn: 1*
+IP:10.20.102.20 * Telecaster 7960  keepalive 8052 max_line 6
 
-ephone-2          Mac:1234.5678.9AB1 TCP socket:[4] activeLine:0 REGISTERED in SCCP ver 12/9
-mediaActive:0 offhook:0 ringing:0 reset:0 reset_sent:0 paging 0 debug:0 caps:8
-IP:10.20.102.21 50473 Telecaster 7945  keepalive 4242 max_line 8
+ephone-2[1] Mac:64D9.8969.51A0 TCP socket:[3] activeLine:0 whisperLine:0 REGISTERED in SCCP ver 20/17
+mediaActive:0 whisper_mediaActive:0 startMedia:0 offhook:0 ringing:0 reset:0 reset_sent:0 debug:0  primary_dn: 2*
+IP:10.20.102.21 * 7945  keepalive 8023 max_line 6
 
-ephone-3          Mac:1234.5678.9AB2 TCP socket:[-1] activeLine:0 UNREGISTERED in SCCP ver 0/0
-mediaActive:0 offhook:0 ringing:0 reset:0 reset_sent:0 paging 0 debug:0 caps:0
+ephone-3[2] Mac:1234.5678.9AB2 TCP socket:[-1] activeLine:0 whisperLine:0 UNREGISTERED
+mediaActive:0 whisper_mediaActive:0 startMedia:0 offhook:0 ringing:0 reset:0 reset_sent:0 debug:0  primary_dn: 3
+IP:0.0.0.0* Unknown 0  keepalive 0
 """
 
 SHOW_RUNNING_CONFIG = """\

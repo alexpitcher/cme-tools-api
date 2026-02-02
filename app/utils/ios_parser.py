@@ -96,8 +96,16 @@ def parse_telephony_service(output: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 _EPHONE_HEADER_RE = re.compile(r"^ephone-(\d+)", re.IGNORECASE)
-_MAC_RE = re.compile(r"Mac[- ]?Addr(?:ess)?\s*[:=]?\s*([\da-fA-F.:-]+)", re.IGNORECASE)
+# Match both "Mac:XXXX" and "MacAddress:XXXX" / "Mac-Addr XXXX" forms
+_MAC_RE = re.compile(
+    r"Mac(?:[- ]?Addr(?:ess)?)?\s*[:=]\s*([\da-fA-F.:-]+)", re.IGNORECASE,
+)
 _REG_RE = re.compile(r"\b(REGISTERED|UNREGISTERED|DECEASED)\b")
+_IP_RE = re.compile(r"\bIP:([\d.]+)")
+_TYPE_RE = re.compile(
+    r"(?:Telecaster\s+)?(\d{4}[A-Za-z]*)\s+keepalive", re.IGNORECASE,
+)
+_DN_RE = re.compile(r"primary_dn:\s*(\d+)", re.IGNORECASE)
 
 
 def parse_ephone_summary(output: str) -> list[dict[str, Any]]:
@@ -120,6 +128,15 @@ def parse_ephone_summary(output: str) -> list[dict[str, Any]]:
         rm = _REG_RE.search(line_s)
         if rm:
             current["status"] = rm.group(1).lower()
+        im = _IP_RE.search(line_s)
+        if im and im.group(1) != "0.0.0.0":
+            current["ip"] = im.group(1)
+        tm = _TYPE_RE.search(line_s)
+        if tm:
+            current["type"] = tm.group(1)
+        dm = _DN_RE.search(line_s)
+        if dm:
+            current["primary_dn"] = int(dm.group(1))
 
     if current:
         phones.append(current)
