@@ -112,6 +112,46 @@ HELP_MAX_EPHONES = """\
 
 HELP_INVALID = "% Unrecognized command"
 
+SHOW_EPHONE_1 = """\
+ephone-1 Mac:000D.2932.22A0 TCP socket:[4] activeLine:0 REGISTERED in SCCP ver 11/9
+phone type is Telecaster 7960
+IP:10.20.102.20
+button 1: dn 1  number 1001 CH1   IDLE
+button 2: dn 2  number 1002 CH1   IDLE
+speed-dial 1 5001 label IT
+speed-dial 2 5002 label Sales
+"""
+
+SHOW_EPHONE_DN_SUMMARY = """\
+ephone-dn 1  number 1001  CH1  IDLE         ephone 1
+ephone-dn 2  number 1002  CH1  IDLE         ephone 1
+ephone-dn 3  number 1003  CH1  IDLE         ephone 2
+"""
+
+SHOW_RUN_SECTION_TELEPHONY = """\
+telephony-service
+ max-ephones 48
+ max-dn 144
+ ip source-address 10.20.102.11 port 2000
+ url services http://10.20.102.1/services
+ create cnf-files version-stamp Jan 01 2023 00:00:00
+"""
+
+SHOW_RUN_SECTION_EPHONE_1 = """\
+ephone 1
+ mac-address 000D.2932.22A0
+ type 7960
+ button 1:1 2:2
+ speed-dial 1 5001 label IT
+"""
+
+SHOW_RUN_SECTION_EPHONE_DN_1 = """\
+ephone-dn 1
+ number 1001
+ name Phone 1
+ label Ext 1001
+"""
+
 
 # ── Canned response map ──────────────────────────────────────────────────
 
@@ -119,8 +159,13 @@ _CANNED: dict[str, str] = {
     "show version": SHOW_VERSION,
     "show telephony-service": SHOW_TELEPHONY_SERVICE,
     "show ephone summary": SHOW_EPHONE_SUMMARY,
+    "show ephone 1": SHOW_EPHONE_1,
+    "show ephone-dn summary": SHOW_EPHONE_DN_SUMMARY,
     "show running-config": SHOW_RUNNING_CONFIG,
     "show running-config | include hostname": "hostname Router",
+    "show running-config | section telephony-service": SHOW_RUN_SECTION_TELEPHONY,
+    "show running-config | section ^ephone 1$": SHOW_RUN_SECTION_EPHONE_1,
+    "show running-config | section ^ephone-dn 1$": SHOW_RUN_SECTION_EPHONE_DN_1,
     "show archive": SHOW_ARCHIVE,
     "configure replace ?": CONFIGURE_REPLACE_HELP,
     "show flash: | include bytes": "250880K bytes of ATA System CompactFlash 0 (Read/Write)",

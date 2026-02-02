@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import __version__
-from app.routers import backup, capabilities, config, health, show
+from app.routers import backup, capabilities, cme, config, health, show
 from app.services.backup import backup_service
 from app.services.ssh_manager import ssh_manager
 from app.utils.logging import setup_logging
@@ -39,3 +39,4 @@ app.include_router(show.router)
 app.include_router(config.router)
 app.include_router(backup.router)
 app.include_router(capabilities.router)
+app.include_router(cme.router)

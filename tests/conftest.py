@@ -85,8 +85,11 @@ async def client(mock_ssh, tmp_path, monkeypatch):
     import app.services.restore as sr
     import app.services.capabilities as sc
 
+    import app.routers.cme as rc
+
     rh.ssh_manager = mock_ssh
     rs.ssh_manager = mock_ssh
+    rc.ssh_manager = mock_ssh
 
     from app.main import app as fastapi_app
 

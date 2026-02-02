@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth import require_api_key
+from app.models.cme import IntentRequest
 from app.models.plan import (
     ApplyResult,
     ConfigPlan,
@@ -13,6 +14,7 @@ from app.models.plan import (
 )
 from app.services import plan_service
 from app.services.apply import apply_plan
+from app.services.intent_service import resolve_intent
 from app.services.validate import validate_plan
 
 router = APIRouter(
@@ -26,8 +28,18 @@ router = APIRouter(
 
 
 @router.post("/plan", response_model=ConfigPlan)
-async def create_plan(req: PlanCreateRequest) -> ConfigPlan:
-    """Create a new configuration change plan."""
+async def create_plan(req: PlanCreateRequest | dict) -> ConfigPlan:
+    """Create a new configuration change plan.
+
+    Accepts either a standard PlanCreateRequest body or an intent payload::
+
+        {"intent": "set_speed_dial", "params": {"ephone_id": 1, ...}}
+    """
+    if isinstance(req, dict) and "intent" in req:
+        intent_req = IntentRequest(**req)
+        return resolve_intent(intent_req.intent, intent_req.params)
+    if isinstance(req, dict):
+        req = PlanCreateRequest(**req)
     plan = plan_service.create_plan(req)
     return plan
 
