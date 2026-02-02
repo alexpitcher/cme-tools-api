@@ -1,0 +1,15 @@
+services:
+  cme-tools-api:
+    image: ghcr.io/alexpitcher/cme-tools-api:latest
+    # To build locally instead of pulling from GHCR, uncomment:
+    # build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - backup-data:/data/backup-workdir
+    restart: unless-stopped
+
+volumes:
+  backup-data:

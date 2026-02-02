@@ -1,0 +1,204 @@
+"""Mock SSH session manager for testing without a real router.
+
+Provides canned IOS outputs so that validate/apply flows can be tested.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from typing import Optional
+
+from app.models.commands import CommandResult
+
+# ── Canned IOS outputs ────────────────────────────────────────────────────
+
+SHOW_VERSION = """\
+Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M8, RELEASE SOFTWARE (fc1)
+Technical Support: http://www.cisco.com/techsupport
+Copyright (c) 1986-2021 by Cisco Systems, Inc.
+
+ROM: System Bootstrap, Version 15.0(1r)M16, RELEASE SOFTWARE (fc1)
+
+Router uptime is 14 days, 3 hours, 22 minutes
+System returned to ROM by power-on
+System image file is "flash:c2900-universalk9-mz.SPA.157-3.M8.bin"
+
+Cisco CISCO2901/K9 (revision 1.0) with 491520K/32768K bytes of memory.
+Processor board ID FTX1234A5BC
+2 Gigabit Ethernet interfaces
+1 terminal line
+1 Virtual Private Network (VPN) Module
+DRAM configuration is 64 bits wide with parity disabled.
+255K bytes of non-volatile configuration memory.
+250880K bytes of ATA System CompactFlash 0 (Read/Write)
+
+Configuration register is 0x2102
+"""
+
+SHOW_TELEPHONY_SERVICE = """\
+CONFIG (Version=4.8(1))
+=====================
+Cisco Unified Communications Manager Express
+
+For different models different limit is applicable. Verify using show telephony-service all.
+ip source-address 10.20.102.11 port 2000
+max-ephones 48
+max-dn 144
+max-conferences 8 gain -6
+transfer-system full-consult
+create cnf-files version-stamp Jan 01 2023 00:00:00
+"""
+
+SHOW_EPHONE_SUMMARY = """\
+ephone-1          Mac:1234.5678.9AB0 TCP socket:[3] activeLine:0 REGISTERED in SCCP ver 12/9
+mediaActive:0 offhook:0 ringing:0 reset:0 reset_sent:0 paging 0 debug:0 caps:8
+IP:10.20.102.20 50472 Telecaster 7945  keepalive 4242 max_line 8
+
+ephone-2          Mac:1234.5678.9AB1 TCP socket:[4] activeLine:0 REGISTERED in SCCP ver 12/9
+mediaActive:0 offhook:0 ringing:0 reset:0 reset_sent:0 paging 0 debug:0 caps:8
+IP:10.20.102.21 50473 Telecaster 7945  keepalive 4242 max_line 8
+
+ephone-3          Mac:1234.5678.9AB2 TCP socket:[-1] activeLine:0 UNREGISTERED in SCCP ver 0/0
+mediaActive:0 offhook:0 ringing:0 reset:0 reset_sent:0 paging 0 debug:0 caps:0
+"""
+
+SHOW_RUNNING_CONFIG = """\
+Building configuration...
+
+Current configuration : 8192 bytes
+!
+version 15.7
+service timestamps debug datetime msec
+service timestamps log datetime msec
+no service password-encryption
+!
+hostname Router
+!
+telephony-service
+ max-ephones 48
+ max-dn 144
+ ip source-address 10.20.102.11 port 2000
+ create cnf-files version-stamp Jan 01 2023 00:00:00
+!
+ephone-dn 1
+ number 1001
+ name Phone 1
+!
+ephone 1
+ mac-address 1234.5678.9AB0
+ type 7945
+ button 1:1
+!
+end
+"""
+
+SHOW_ARCHIVE = "% Archive has not been configured"
+
+CONFIGURE_REPLACE_HELP = """\
+  flash:       Configuration file in flash
+  ftp:         Configuration file on ftp
+  http:        Configuration file on http
+  https:       Configuration file on https
+  nvram:       Configuration file in nvram
+  rcp:         Configuration file on rcp
+  scp:         Configuration file on scp
+  tftp:        Configuration file on tftp
+"""
+
+HELP_MAX_EPHONES = """\
+  <1-240>  Maximum number of ephones supported
+"""
+
+HELP_INVALID = "% Unrecognized command"
+
+
+# ── Canned response map ──────────────────────────────────────────────────
+
+_CANNED: dict[str, str] = {
+    "show version": SHOW_VERSION,
+    "show telephony-service": SHOW_TELEPHONY_SERVICE,
+    "show ephone summary": SHOW_EPHONE_SUMMARY,
+    "show running-config": SHOW_RUNNING_CONFIG,
+    "show running-config | include hostname": "hostname Router",
+    "show archive": SHOW_ARCHIVE,
+    "configure replace ?": CONFIGURE_REPLACE_HELP,
+    "show flash: | include bytes": "250880K bytes of ATA System CompactFlash 0 (Read/Write)",
+    "terminal length 0": "",
+    "terminal width 0": "",
+}
+
+
+# ── Mock manager ─────────────────────────────────────────────────────────
+
+
+class MockSSHManager:
+    """Drop-in replacement for SSHSessionManager using canned outputs."""
+
+    def __init__(self) -> None:
+        self.is_connected = True
+        self.sent_commands: list[str] = []
+        self.sent_configs: list[list[str]] = []
+        self._extra: dict[str, str] = {}
+
+    def add_response(self, command: str, output: str) -> None:
+        """Add or override a canned response."""
+        self._extra[command] = output
+
+    def _lookup(self, command: str) -> str:
+        if command in self._extra:
+            return self._extra[command]
+        if command in _CANNED:
+            return _CANNED[command]
+        # Partial match
+        for key, val in _CANNED.items():
+            if command.lower().startswith(key.lower()):
+                return val
+        return ""
+
+    async def send_show(self, command: str) -> CommandResult:
+        self.sent_commands.append(command)
+        output = self._lookup(command)
+        return CommandResult(
+            command=command,
+            output=output,
+            failed=False,
+            elapsed_time=0.01,
+        )
+
+    async def send_configs(
+        self,
+        configs: list[str],
+        *,
+        stop_on_failed: bool = False,
+    ) -> list[CommandResult]:
+        self.sent_configs.append(configs)
+        results: list[CommandResult] = []
+        for cmd in configs:
+            output = self._lookup(cmd)
+            failed = "% Invalid" in output
+            results.append(
+                CommandResult(
+                    command=cmd,
+                    output=output,
+                    failed=failed,
+                    elapsed_time=0.01,
+                ),
+            )
+            if failed and stop_on_failed:
+                break
+        return results
+
+    async def probe_help(self, text: str, wait: float = 0.0) -> str:
+        self.sent_commands.append(f"PROBE:{text}")
+        # If text ends with ?, look up the base command
+        base = text.rstrip("? ").strip()
+        if base in self._extra:
+            return self._extra[base]
+        if "max-ephones" in base:
+            return HELP_MAX_EPHONES
+        if "blahblah" in base or "invalid" in base.lower():
+            return HELP_INVALID
+        return f"  <cr>\n"
+
+    async def close(self) -> None:
+        self.is_connected = False
