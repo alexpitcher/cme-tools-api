@@ -89,6 +89,72 @@ curl -X POST http://localhost:8000/show \
   -d '{"command": "show telephony-service"}'
 ```
 
+### CME Read Endpoints
+
+```bash
+# List all ephones (parsed summary)
+curl -H "X-API-Key: YOUR_KEY" http://localhost:8000/cme/ephones
+
+# Get detailed ephone info (buttons, speed-dials, status)
+curl -H "X-API-Key: YOUR_KEY" http://localhost:8000/cme/ephone/1
+
+# List all ephone-dns
+curl -H "X-API-Key: YOUR_KEY" http://localhost:8000/cme/ephone-dns
+
+# Get telephony-service config
+curl -H "X-API-Key: YOUR_KEY" http://localhost:8000/cme/telephony-service
+
+# Get a running-config section
+curl -H "X-API-Key: YOUR_KEY" "http://localhost:8000/cme/config/section?anchor=telephony-service"
+
+# Get ephone running-config
+curl -H "X-API-Key: YOUR_KEY" http://localhost:8000/cme/config/ephone/1
+
+# Get ephone-dn running-config
+curl -H "X-API-Key: YOUR_KEY" http://localhost:8000/cme/config/ephone-dn/1
+```
+
+### CME Write Endpoints (Plan Generation)
+
+These endpoints generate `ConfigPlan` objects -- they do **not** apply changes directly.
+Use `/config/validate` and `/config/apply` with the returned `plan_id` to execute.
+
+```bash
+# Set a speed-dial on an ephone
+curl -X POST http://localhost:8000/cme/speed-dial \
+  -H "X-API-Key: YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"ephone_id": 1, "position": 1, "label": "IT", "number": "5001"}'
+
+# Remove a speed-dial
+curl -X DELETE http://localhost:8000/cme/speed-dial \
+  -H "X-API-Key: YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"ephone_id": 1, "position": 1}'
+
+# Set a telephony URL (services, directories, or idle)
+curl -X POST http://localhost:8000/cme/telephony/url \
+  -H "X-API-Key: YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"url_type": "idle", "url": "http://10.0.0.1/idle", "idle_timeout": 60}'
+
+# Clear a telephony URL
+curl -X DELETE http://localhost:8000/cme/telephony/url \
+  -H "X-API-Key: YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"url_type": "services"}'
+
+# Create a plan via intent (alternative to dedicated endpoints)
+curl -X POST http://localhost:8000/config/plan \
+  -H "X-API-Key: YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"intent": "set_speed_dial", "params": {"ephone_id": 1, "position": 1, "label": "IT", "number": "5001"}}'
+```
+
+**Supported intents:** `set_speed_dial`, `delete_speed_dial`, `set_url_services`,
+`set_url_directories`, `set_url_idle`, `clear_url_services`, `clear_url_directories`,
+`clear_url_idle`
+
 ### Plan / Validate / Apply
 
 ```bash
