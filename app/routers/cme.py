@@ -21,6 +21,9 @@ from app.models.plan import ConfigPlan
 from app.services.intent_service import resolve_intent
 from app.services.ssh_manager import ssh_manager
 from app.utils.ios_parser import (
+    _extract_ephone_block,
+    extract_ephone_config_section,
+    extract_ephone_dn_config_section,
     parse_config_ephone,
     parse_config_ephone_dn,
     parse_ephone_detail,
@@ -52,19 +55,31 @@ async def list_ephones() -> EphoneSummaryResponse:
 @router.get("/ephone/{ephone_id}", response_model=EphoneDetailResponse)
 async def get_ephone(ephone_id: int) -> EphoneDetailResponse:
     """Get detailed information about a single ephone."""
-    result = await ssh_manager.send_show(f"show ephone {ephone_id}")
+    result = await ssh_manager.send_show("show ephone")
     if result.failed:
         raise HTTPException(status_code=502, detail="Router command failed")
-    parsed = parse_ephone_detail(result.output)
-    return EphoneDetailResponse(ephone_id=ephone_id, raw=result.output, **parsed)
+    block = _extract_ephone_block(result.output, ephone_id)
+    parsed = parse_ephone_detail(block)
+    return EphoneDetailResponse(ephone_id=ephone_id, raw=block, **parsed)
 
 
 @router.get("/ephone-dns", response_model=EphoneDnSummaryResponse)
 async def list_ephone_dns() -> EphoneDnSummaryResponse:
-    """List all ephone-dns with summary data."""
+    """List all ephone-dns with summary data.
+
+    Tries ``show ephone-dn summary`` first; if that returns a non-DN table
+    (e.g. voice-port table), falls back to parsing from running-config.
+    """
     result = await ssh_manager.send_show("show ephone-dn summary")
     dns = parse_ephone_dn_summary(result.output)
-    return EphoneDnSummaryResponse(dns=dns, raw=result.output)
+    raw = result.output
+    if not dns:
+        cfg_result = await ssh_manager.send_show(
+            "show running-config | section ephone-dn",
+        )
+        dns = parse_ephone_dn_summary(cfg_result.output)
+        raw = cfg_result.output
+    return EphoneDnSummaryResponse(dns=dns, raw=raw)
 
 
 @router.get("/telephony-service", response_model=TelephonyServiceResponse)
@@ -88,12 +103,12 @@ async def get_config_section(
 @router.get("/config/ephone/{ephone_id}", response_model=ConfigSectionResponse)
 async def get_ephone_config(ephone_id: int) -> ConfigSectionResponse:
     """Get the running-config section for a specific ephone."""
-    cmd = f"show running-config | section ^ephone {ephone_id}$"
-    result = await ssh_manager.send_show(cmd)
-    parsed = parse_config_ephone(result.output) if result.output.strip() else None
+    result = await ssh_manager.send_show("show running-config | section ephone")
+    section = extract_ephone_config_section(result.output, ephone_id)
+    parsed = parse_config_ephone(section) if section.strip() else None
     return ConfigSectionResponse(
         anchor=f"ephone {ephone_id}",
-        config=result.output,
+        config=section,
         parsed=parsed,
     )
 
@@ -101,12 +116,12 @@ async def get_ephone_config(ephone_id: int) -> ConfigSectionResponse:
 @router.get("/config/ephone-dn/{dn_id}", response_model=ConfigSectionResponse)
 async def get_ephone_dn_config(dn_id: int) -> ConfigSectionResponse:
     """Get the running-config section for a specific ephone-dn."""
-    cmd = f"show running-config | section ^ephone-dn {dn_id}$"
-    result = await ssh_manager.send_show(cmd)
-    parsed = parse_config_ephone_dn(result.output) if result.output.strip() else None
+    result = await ssh_manager.send_show("show running-config | section ephone")
+    section = extract_ephone_dn_config_section(result.output, dn_id)
+    parsed = parse_config_ephone_dn(section) if section.strip() else None
     return ConfigSectionResponse(
         anchor=f"ephone-dn {dn_id}",
-        config=result.output,
+        config=section,
         parsed=parsed,
     )
 

@@ -112,14 +112,24 @@ HELP_MAX_EPHONES = """\
 
 HELP_INVALID = "% Unrecognized command"
 
-SHOW_EPHONE_1 = """\
-ephone-1 Mac:000D.2932.22A0 TCP socket:[4] activeLine:0 REGISTERED in SCCP ver 11/9
-phone type is Telecaster 7960
-IP:10.20.102.20
-button 1: dn 1  number 1001 CH1   IDLE
-button 2: dn 2  number 1002 CH1   IDLE
-speed-dial 1 5001 label IT
-speed-dial 2 5002 label Sales
+# Full "show ephone" detail output (used by GET /cme/ephone/{id})
+SHOW_EPHONE_DETAIL = """\
+ephone-1[0] Mac:000D.2932.22A0 TCP socket:[4] activeLine:0 whisperLine:0 REGISTERED in SCCP ver 11/9
+IP:10.20.102.20 * 50406 Telecaster 7960  keepalive 8642 max_line 6 available_line 1
+button 1: cw:1 ccw:(0 0)
+  dn 1  number 4002 CH1   IDLE         CH2   IDLE
+speed dial 2:4001 Zoe Bedroom
+speed dial 3:4003 Alex Bedroom
+Preferred Codec: g711ulaw
+
+ephone-2[1] Mac:64D9.8969.51A0 TCP socket:[3] activeLine:0 whisperLine:0 REGISTERED in SCCP ver 20/17
+IP:10.20.102.21 * 52434 7965  keepalive 8610 max_line 6 available_line 1
+button 1: cw:1 ccw:(0 0)
+  dn 2  number 4001 CH1   IDLE         CH2   IDLE
+speed dial 2:4003 Alex Bedroom
+Preferred Codec: g711ulaw
+
+Max 10, Registered 2, Unregistered 0, Deceased 0
 """
 
 SHOW_EPHONE_DN_SUMMARY = """\
@@ -137,19 +147,38 @@ telephony-service
  create cnf-files version-stamp Jan 01 2023 00:00:00
 """
 
-SHOW_RUN_SECTION_EPHONE_1 = """\
-ephone 1
+# Bulk "show run | section ephone" output (contains all ephone/ephone-dn sections)
+SHOW_RUN_SECTION_EPHONE = """\
+ no auto-reg-ephone
+ max-ephones 48
+ephone-dn  1  dual-line
+ number 4002
+ label Rack Phone
+ephone-dn  2  dual-line
+ number 4001
+ label Zoe Bedroom
+ephone  1
+ device-security-mode none
  mac-address 000D.2932.22A0
+ speed-dial 2 4001 label "Zoe Bedroom"
+ speed-dial 3 4003 label "Alex Bedroom"
  type 7960
- button 1:1 2:2
- speed-dial 1 5001 label IT
+ button  1:1
+ephone  2
+ device-security-mode none
+ mac-address 64D9.8969.51A0
+ speed-dial 2 4003 label "Alex Bedroom"
+ type 7965
+ button  1:2
 """
 
-SHOW_RUN_SECTION_EPHONE_DN_1 = """\
-ephone-dn 1
- number 1001
- name Phone 1
- label Ext 1001
+SHOW_RUN_SECTION_EPHONE_DN = """\
+ephone-dn  1  dual-line
+ number 4002
+ label Rack Phone
+ephone-dn  2  dual-line
+ number 4001
+ label Zoe Bedroom
 """
 
 
@@ -159,13 +188,13 @@ _CANNED: dict[str, str] = {
     "show version": SHOW_VERSION,
     "show telephony-service": SHOW_TELEPHONY_SERVICE,
     "show ephone summary": SHOW_EPHONE_SUMMARY,
-    "show ephone 1": SHOW_EPHONE_1,
+    "show ephone": SHOW_EPHONE_DETAIL,
     "show ephone-dn summary": SHOW_EPHONE_DN_SUMMARY,
     "show running-config": SHOW_RUNNING_CONFIG,
     "show running-config | include hostname": "hostname Router",
     "show running-config | section telephony-service": SHOW_RUN_SECTION_TELEPHONY,
-    "show running-config | section ^ephone 1$": SHOW_RUN_SECTION_EPHONE_1,
-    "show running-config | section ^ephone-dn 1$": SHOW_RUN_SECTION_EPHONE_DN_1,
+    "show running-config | section ephone-dn": SHOW_RUN_SECTION_EPHONE_DN,
+    "show running-config | section ephone": SHOW_RUN_SECTION_EPHONE,
     "show archive": SHOW_ARCHIVE,
     "configure replace ?": CONFIGURE_REPLACE_HELP,
     "show flash: | include bytes": "250880K bytes of ATA System CompactFlash 0 (Read/Write)",

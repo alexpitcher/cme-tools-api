@@ -7,58 +7,72 @@ import pytest
 from app.models.cme import IntentName
 from app.services.intent_service import resolve_intent
 from app.utils.ios_parser import (
+    _extract_ephone_block,
+    extract_ephone_config_section,
+    extract_ephone_dn_config_section,
     parse_config_ephone,
     parse_config_ephone_dn,
     parse_ephone_detail,
     parse_ephone_dn_summary,
 )
 from tests.mock_ssh import (
-    SHOW_EPHONE_1,
+    SHOW_EPHONE_DETAIL,
     SHOW_EPHONE_DN_SUMMARY,
-    SHOW_RUN_SECTION_EPHONE_1,
-    SHOW_RUN_SECTION_EPHONE_DN_1,
+    SHOW_RUN_SECTION_EPHONE,
+    SHOW_RUN_SECTION_EPHONE_DN,
 )
 
 
 # ---------------------------------------------------------------------------
-# Parser: parse_ephone_detail
+# Parser: parse_ephone_detail  (from "show ephone" block)
 # ---------------------------------------------------------------------------
 
 
 class TestParseEphoneDetail:
+    """Parse a single ephone block extracted from 'show ephone' output."""
+
+    def _block(self) -> str:
+        return _extract_ephone_block(SHOW_EPHONE_DETAIL, 1)
+
+    def test_block_extraction(self):
+        block = self._block()
+        assert "ephone-1" in block
+        assert "ephone-2" not in block
+
     def test_mac_parsed(self):
-        result = parse_ephone_detail(SHOW_EPHONE_1)
+        result = parse_ephone_detail(self._block())
         assert result["mac"] == "000D.2932.22A0"
 
     def test_type_parsed(self):
-        result = parse_ephone_detail(SHOW_EPHONE_1)
+        result = parse_ephone_detail(self._block())
         assert result["type"] == "7960"
 
     def test_status_parsed(self):
-        result = parse_ephone_detail(SHOW_EPHONE_1)
+        result = parse_ephone_detail(self._block())
         assert result["status"] == "registered"
 
     def test_ip_parsed(self):
-        result = parse_ephone_detail(SHOW_EPHONE_1)
+        result = parse_ephone_detail(self._block())
         assert result["ip"] == "10.20.102.20"
 
     def test_buttons_parsed(self):
-        result = parse_ephone_detail(SHOW_EPHONE_1)
-        assert len(result["buttons"]) == 2
-        assert result["buttons"][0]["button_number"] == 1
+        result = parse_ephone_detail(self._block())
+        assert len(result["buttons"]) == 1
         assert result["buttons"][0]["dn"] == 1
-        assert result["buttons"][1]["dn"] == 2
+        assert result["buttons"][0]["number"] == "4002"
 
     def test_speed_dials_parsed(self):
-        result = parse_ephone_detail(SHOW_EPHONE_1)
+        result = parse_ephone_detail(self._block())
         assert len(result["speed_dials"]) == 2
-        assert result["speed_dials"][0]["position"] == 1
-        assert result["speed_dials"][0]["number"] == "5001"
-        assert result["speed_dials"][0]["label"] == "IT"
-        assert result["speed_dials"][1]["number"] == "5002"
+        assert result["speed_dials"][0]["position"] == 2
+        assert result["speed_dials"][0]["number"] == "4001"
+        assert result["speed_dials"][0]["label"] == "Zoe Bedroom"
 
     def test_empty_input(self):
         assert parse_ephone_detail("") == {}
+
+    def test_extract_nonexistent(self):
+        assert _extract_ephone_block(SHOW_EPHONE_DETAIL, 99) == ""
 
 
 # ---------------------------------------------------------------------------
@@ -67,86 +81,93 @@ class TestParseEphoneDetail:
 
 
 class TestParseEphoneDnSummary:
-    def test_count(self):
+    def test_tabular_format(self):
         dns = parse_ephone_dn_summary(SHOW_EPHONE_DN_SUMMARY)
         assert len(dns) == 3
-
-    def test_dn_number(self):
-        dns = parse_ephone_dn_summary(SHOW_EPHONE_DN_SUMMARY)
         assert dns[0]["dn_id"] == 1
         assert dns[0]["number"] == "1001"
-
-    def test_state(self):
-        dns = parse_ephone_dn_summary(SHOW_EPHONE_DN_SUMMARY)
         assert dns[0]["state"] == "IDLE"
-
-    def test_ephone_assignment(self):
-        dns = parse_ephone_dn_summary(SHOW_EPHONE_DN_SUMMARY)
         assert dns[0]["ephone_id"] == 1
-        assert dns[2]["ephone_id"] == 2
+
+    def test_config_fallback(self):
+        """When tabular format isn't available, parse from config sections."""
+        dns = parse_ephone_dn_summary(SHOW_RUN_SECTION_EPHONE_DN)
+        assert len(dns) == 2
+        assert dns[0]["dn_id"] == 1
+        assert dns[0]["number"] == "4002"
+        assert dns[1]["number"] == "4001"
 
     def test_empty_input(self):
         assert parse_ephone_dn_summary("") == []
 
 
 # ---------------------------------------------------------------------------
-# Parser: parse_config_ephone
+# Parser: parse_config_ephone (from extracted config section)
 # ---------------------------------------------------------------------------
 
 
 class TestParseConfigEphone:
+    def _section(self) -> str:
+        return extract_ephone_config_section(SHOW_RUN_SECTION_EPHONE, 1)
+
+    def test_section_extraction(self):
+        section = self._section()
+        assert "ephone  1" in section
+        assert "ephone  2" not in section
+
     def test_ephone_id(self):
-        result = parse_config_ephone(SHOW_RUN_SECTION_EPHONE_1)
+        result = parse_config_ephone(self._section())
         assert result["ephone_id"] == 1
 
     def test_mac(self):
-        result = parse_config_ephone(SHOW_RUN_SECTION_EPHONE_1)
+        result = parse_config_ephone(self._section())
         assert result["mac"] == "000D.2932.22A0"
 
     def test_type(self):
-        result = parse_config_ephone(SHOW_RUN_SECTION_EPHONE_1)
+        result = parse_config_ephone(self._section())
         assert result["type"] == "7960"
 
     def test_buttons(self):
-        result = parse_config_ephone(SHOW_RUN_SECTION_EPHONE_1)
-        assert len(result["buttons"]) == 2
+        result = parse_config_ephone(self._section())
+        assert len(result["buttons"]) == 1
         assert result["buttons"][0]["button_number"] == 1
         assert result["buttons"][0]["dn"] == 1
-        assert result["buttons"][1]["button_number"] == 2
-        assert result["buttons"][1]["dn"] == 2
 
     def test_speed_dials(self):
-        result = parse_config_ephone(SHOW_RUN_SECTION_EPHONE_1)
-        assert len(result["speed_dials"]) == 1
-        assert result["speed_dials"][0]["position"] == 1
-        assert result["speed_dials"][0]["number"] == "5001"
-        assert result["speed_dials"][0]["label"] == "IT"
+        result = parse_config_ephone(self._section())
+        assert len(result["speed_dials"]) == 2
+        assert result["speed_dials"][0]["number"] == "4001"
+        assert result["speed_dials"][0]["label"] == "Zoe Bedroom"
 
     def test_empty_input(self):
         assert parse_config_ephone("") == {}
 
 
 # ---------------------------------------------------------------------------
-# Parser: parse_config_ephone_dn
+# Parser: parse_config_ephone_dn (from extracted config section)
 # ---------------------------------------------------------------------------
 
 
 class TestParseConfigEphoneDn:
+    def _section(self) -> str:
+        return extract_ephone_dn_config_section(SHOW_RUN_SECTION_EPHONE, 1)
+
+    def test_section_extraction(self):
+        section = self._section()
+        assert "ephone-dn  1" in section
+        assert "ephone-dn  2" not in section
+
     def test_dn_id(self):
-        result = parse_config_ephone_dn(SHOW_RUN_SECTION_EPHONE_DN_1)
+        result = parse_config_ephone_dn(self._section())
         assert result["dn_id"] == 1
 
     def test_number(self):
-        result = parse_config_ephone_dn(SHOW_RUN_SECTION_EPHONE_DN_1)
-        assert result["number"] == "1001"
-
-    def test_name(self):
-        result = parse_config_ephone_dn(SHOW_RUN_SECTION_EPHONE_DN_1)
-        assert result["name"] == "Phone 1"
+        result = parse_config_ephone_dn(self._section())
+        assert result["number"] == "4002"
 
     def test_label(self):
-        result = parse_config_ephone_dn(SHOW_RUN_SECTION_EPHONE_DN_1)
-        assert result["label"] == "Ext 1001"
+        result = parse_config_ephone_dn(self._section())
+        assert result["label"] == "Rack Phone"
 
     def test_empty_input(self):
         assert parse_config_ephone_dn("") == {}
@@ -237,7 +258,6 @@ async def test_get_ephone_detail(client):
     data = resp.json()
     assert data["ephone_id"] == 1
     assert data["mac"] == "000D.2932.22A0"
-    assert len(data["buttons"]) == 2
     assert len(data["speed_dials"]) == 2
 
 
@@ -286,7 +306,7 @@ async def test_get_ephone_dn_config(client):
     data = resp.json()
     assert data["anchor"] == "ephone-dn 1"
     assert data["parsed"]["dn_id"] == 1
-    assert data["parsed"]["number"] == "1001"
+    assert data["parsed"]["number"] == "4002"
 
 
 @pytest.mark.asyncio

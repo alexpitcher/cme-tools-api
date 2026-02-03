@@ -196,20 +196,42 @@ def extract_config_section(full_config: str, section_keyword: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# ephone detail parsing  (show ephone {id})
+# ephone detail parsing  (show ephone {id} or filtered from show ephone)
 # ---------------------------------------------------------------------------
 
-_DETAIL_BUTTON_RE = re.compile(
-    r"button\s+(\d+)\s*:\s*dn\s+(\d+)", re.IGNORECASE,
+# "button 1: cw:1" followed by "  dn 1  number 4002" on next line
+_DETAIL_DN_RE = re.compile(r"^\s+dn\s+(\d+)\s+number\s+(\S+)", re.IGNORECASE)
+# "speed dial 2:4001 Zoe Bedroom" (show ephone output format)
+_SHOW_SPEED_DIAL_RE = re.compile(
+    r"speed\s+dial\s+(\d+):(\S+)\s*(.*)", re.IGNORECASE,
 )
-_SPEED_DIAL_RE = re.compile(
+# "speed-dial 2 4001 label ..." (running-config format, also used in some outputs)
+_CFG_SPEED_DIAL_INLINE_RE = re.compile(
     r"speed-dial\s+(\d+)\s+(\S+)(?:\s+label\s+(.+))?", re.IGNORECASE,
 )
 _DETAIL_TYPE_RE = re.compile(r"phone\s+type\s+is\s+(?:Telecaster\s+)?(\S+)", re.IGNORECASE)
 
 
+def _extract_ephone_block(full_output: str, ephone_id: int) -> str:
+    """Extract a single ephone's block from 'show ephone' output."""
+    pattern = re.compile(rf"^ephone-{ephone_id}\b", re.IGNORECASE | re.MULTILINE)
+    m = pattern.search(full_output)
+    if not m:
+        return ""
+    start = m.start()
+    # Find the next ephone header or end of output
+    next_hdr = re.search(r"^ephone-\d+\b", full_output[m.end():], re.MULTILINE)
+    if next_hdr:
+        end = m.end() + next_hdr.start()
+    else:
+        # Stop at summary lines like "Max 10, Registered 4"
+        summary = re.search(r"^Max\s+\d+,\s+Registered", full_output[m.end():], re.MULTILINE)
+        end = (m.end() + summary.start()) if summary else len(full_output)
+    return full_output[start:end].rstrip()
+
+
 def parse_ephone_detail(output: str) -> dict[str, Any]:
-    """Parse 'show ephone {id}' output into a structured dict."""
+    """Parse a single ephone block from 'show ephone' output."""
     result: dict[str, Any] = {}
     if not output.strip():
         return result
@@ -219,7 +241,7 @@ def parse_ephone_detail(output: str) -> dict[str, Any]:
     if m:
         result["mac"] = m.group(1)
 
-    # Type – prefer the "phone type is ..." line from detail output
+    # Type – prefer the "phone type is ..." line, fallback to keepalive line
     m = _DETAIL_TYPE_RE.search(output)
     if m:
         result["type"] = m.group(1)
@@ -236,23 +258,34 @@ def parse_ephone_detail(output: str) -> dict[str, Any]:
     if m and m.group(1) != "0.0.0.0":
         result["ip"] = m.group(1)
 
-    # Buttons
+    # Buttons / DNs – parse "dn N  number XXXX" lines
     buttons: list[dict[str, Any]] = []
-    for bm in _DETAIL_BUTTON_RE.finditer(output):
-        buttons.append({
-            "button_number": int(bm.group(1)),
-            "dn": int(bm.group(2)),
-        })
+    for i, line in enumerate(output.splitlines()):
+        dm = _DETAIL_DN_RE.match(line)
+        if dm:
+            buttons.append({
+                "button_number": len(buttons) + 1,
+                "dn": int(dm.group(1)),
+                "number": dm.group(2),
+            })
     result["buttons"] = buttons
 
-    # Speed dials
+    # Speed dials – handle both "speed dial N:NUMBER LABEL" and
+    # "speed-dial N NUMBER label LABEL" formats
     speed_dials: list[dict[str, Any]] = []
-    for sm in _SPEED_DIAL_RE.finditer(output):
+    for sm in _SHOW_SPEED_DIAL_RE.finditer(output):
         speed_dials.append({
             "position": int(sm.group(1)),
             "number": sm.group(2),
-            "label": (sm.group(3) or "").strip(),
+            "label": sm.group(3).strip(),
         })
+    if not speed_dials:
+        for sm in _CFG_SPEED_DIAL_INLINE_RE.finditer(output):
+            speed_dials.append({
+                "position": int(sm.group(1)),
+                "number": sm.group(2),
+                "label": (sm.group(3) or "").strip().strip('"'),
+            })
     result["speed_dials"] = speed_dials
 
     return result
@@ -266,14 +299,21 @@ _DN_SUMMARY_LINE_RE = re.compile(
     r"ephone-dn\s+(\d+)\s+number\s+(\S+)", re.IGNORECASE,
 )
 _DN_STATE_RE = re.compile(r"\b(IDLE|RINGING|IN-USE|BUSY|ALERTING)\b", re.IGNORECASE)
+# Config-based DN header: "ephone-dn  1  dual-line" or "ephone-dn 1"
+_DN_CFG_HEADER_RE = re.compile(r"^ephone-dn\s+(\d+)", re.IGNORECASE)
 
 
 def parse_ephone_dn_summary(output: str) -> list[dict[str, Any]]:
-    """Parse 'show ephone-dn summary' into a list of DN dicts."""
+    """Parse ephone-dn info from either summary or running-config output.
+
+    Handles both the tabular ``show ephone-dn summary`` format and the
+    running-config section format (``show run | section ephone-dn``).
+    """
     dns: list[dict[str, Any]] = []
     if not output.strip():
         return dns
 
+    # Try tabular format first
     for line in output.splitlines():
         line_s = line.strip()
         m = _DN_SUMMARY_LINE_RE.match(line_s)
@@ -286,13 +326,63 @@ def parse_ephone_dn_summary(output: str) -> list[dict[str, Any]]:
         sm = _DN_STATE_RE.search(line_s)
         if sm:
             entry["state"] = sm.group(1).upper()
-        # ephone assignment often at end of line: "ephone 1"
         em = re.search(r"ephone\s+(\d+)\s*$", line_s, re.IGNORECASE)
         if em:
             entry["ephone_id"] = int(em.group(1))
         dns.append(entry)
 
+    if dns:
+        return dns
+
+    # Fallback: parse config-style sections (from show run | section ephone-dn)
+    current: dict[str, Any] | None = None
+    for line in output.splitlines():
+        line_s = line.strip()
+        hm = _DN_CFG_HEADER_RE.match(line_s)
+        if hm:
+            if current:
+                dns.append(current)
+            current = {"dn_id": int(hm.group(1))}
+            continue
+        if current is None:
+            continue
+        nm = re.match(r"number\s+(\S+)", line_s, re.IGNORECASE)
+        if nm:
+            current["number"] = nm.group(1)
+        lm = re.match(r"label\s+(.+)", line_s, re.IGNORECASE)
+        if lm:
+            current["label"] = lm.group(1).strip()
+    if current:
+        dns.append(current)
+
     return dns
+
+
+def extract_ephone_config_section(full_output: str, ephone_id: int) -> str:
+    """Extract one 'ephone N' block from bulk 'show run | section ephone' output."""
+    pattern = re.compile(rf"^ephone\s+{ephone_id}\b", re.IGNORECASE | re.MULTILINE)
+    m = pattern.search(full_output)
+    if not m:
+        return ""
+    start = m.start()
+    # Next top-level section (ephone N, ephone-dn N, ephone-template N, etc.)
+    rest = full_output[m.end():]
+    nxt = re.search(r"^(?:ephone(?:-dn|-template|-hunt)?)\s+\d", rest, re.MULTILINE)
+    end = (m.end() + nxt.start()) if nxt else len(full_output)
+    return full_output[start:end].rstrip()
+
+
+def extract_ephone_dn_config_section(full_output: str, dn_id: int) -> str:
+    """Extract one 'ephone-dn N' block from bulk section output."""
+    pattern = re.compile(rf"^ephone-dn\s+{dn_id}\b", re.IGNORECASE | re.MULTILINE)
+    m = pattern.search(full_output)
+    if not m:
+        return ""
+    start = m.start()
+    rest = full_output[m.end():]
+    nxt = re.search(r"^(?:ephone(?:-dn|-template|-hunt)?)\s+\d", rest, re.MULTILINE)
+    end = (m.end() + nxt.start()) if nxt else len(full_output)
+    return full_output[start:end].rstrip()
 
 
 # ---------------------------------------------------------------------------
@@ -302,8 +392,9 @@ def parse_ephone_dn_summary(output: str) -> list[dict[str, Any]]:
 _CFG_MAC_RE = re.compile(r"^\s*mac-address\s+([\da-fA-F.:-]+)", re.IGNORECASE)
 _CFG_TYPE_RE = re.compile(r"^\s*type\s+(\S+)", re.IGNORECASE)
 _CFG_BUTTON_RE = re.compile(r"^\s*button\s+(.+)", re.IGNORECASE)
+# speed-dial 2 4001 label "Zoe Bedroom"  (label may be quoted)
 _CFG_SPEED_DIAL_RE = re.compile(
-    r"^\s*speed-dial\s+(\d+)\s+(\S+)(?:\s+label\s+(.+))?", re.IGNORECASE,
+    r'^\s*speed-dial\s+(\d+)\s+(\S+)(?:\s+label\s+"?([^"]*)"?)?', re.IGNORECASE,
 )
 
 
