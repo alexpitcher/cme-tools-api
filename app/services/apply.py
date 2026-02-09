@@ -23,8 +23,9 @@ async def apply_plan(
     1. Pre-backup (running-config -> git)
     2. Apply config commands
     3. Run verification show commands
-    4. Post-backup
-    5. On failure: attempt rollback
+    4. Write memory (save to startup-config)
+    5. Post-backup
+    6. On failure: attempt rollback
     """
     _mgr = mgr or ssh_manager
     _bkp = bkp or backup_service
@@ -125,7 +126,15 @@ async def apply_plan(
                     ),
                 )
 
-    # ── 4. Post-backup ────────────────────────────────────────────────
+    # ── 4. Write memory ─────────────────────────────────────────────
+    if success:
+        try:
+            wr_result = await _mgr.send_show("write memory")
+            log.info("apply.write_memory", output=wr_result.output[:80])
+        except Exception as exc:
+            log.error("apply.write_memory_failed", error=str(exc))
+
+    # ── 5. Post-backup ────────────────────────────────────────────────
     try:
         running = await _mgr.send_show("show running-config")
         _, post_sha = await _bkp.save_backup(
@@ -137,7 +146,7 @@ async def apply_plan(
     except Exception as exc:
         log.error("apply.post_backup_failed", error=str(exc))
 
-    # ── 5. Rollback on failure ────────────────────────────────────────
+    # ── 6. Rollback on failure ────────────────────────────────────────
     if not success and pre_sha:
         rollback_attempted = True
         try:
